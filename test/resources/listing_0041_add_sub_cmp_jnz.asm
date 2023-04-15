@@ -22,7 +22,7 @@ add al, [bx + si]
 add ax, bx
 add al, ah
 add ax, 1000
-add al, -30
+add al, 226
 add al, 9
 sub bx, [bx + si]
 sub bx, [bp + 0]
@@ -46,7 +46,7 @@ sub al, [bx + si]
 sub ax, bx
 sub al, ah
 sub ax, 1000
-sub al, -30
+sub al, 226
 sub al, 9
 cmp bx, [bx + si]
 cmp bx, [bp + 0]
@@ -70,7 +70,7 @@ cmp al, [bx + si]
 cmp ax, bx
 cmp al, ah
 cmp ax, 1000
-cmp al, -30
+cmp al, 226
 cmp al, 9
 jne $+4
 jne $-2

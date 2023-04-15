@@ -1,12 +1,11 @@
 (ns decoder
   (:require [clojure.java.io :as io]
-            [clojure.math :refer [pow]]
-            [schema.core :as s])
+            [clojure.string :as string])
   (:import [java.io ByteArrayOutputStream]))
 
 (defmacro def-locals []
   (let [bindings (filter #(and (simple-symbol? %)
-                               (not (clojure.string/includes? (str %) "--"))
+                               (not (string/includes? (str %) "--"))
                                (not (re-matches #"(output|input)-(schema|checker)\d\d\d+.*" (str %)))) (keys &env))]
     `(do ~@(for [sym bindings]
              `(def ~sym ~sym)))))
@@ -136,19 +135,19 @@
 (def DATA
   [[:data 8 (fn [data & _]
               (assert (valid-number? data 8))
-              (signed-8-bit data))]])
+              data)]])
 
 (defn DATA-if-SW [{:keys [data s w] :or {s 0}}]
   (when (and (= s 0) (= 1 w))
     [[:data 8 (fn [data-hi & _]
                 (assert (valid-number? data-hi 8))
-                (signed-16-bit (add-bytes (bit-and (mask 8) data)
-                                          data-hi)))]]))
+                (add-bytes (bit-and (mask 8) data)
+                           data-hi))]]))
 
 (defn D-implicit [d]
   [:d 0 (constantly d)])
 
-(defn DISP-LO [{:keys [r|m mod w]}]
+(defn DISP-LO [{:keys [r|m mod]}]
   (cond (or (= 2r10 mod)
             (= '[DIRECT-ADDRESS] r|m))
         [[:disp-lo 8 (fn [disp-lo & _]
@@ -160,7 +159,7 @@
                    (valid-number? disp 8)
                    (conj (pop r|m) (signed-8-bit disp)))]]))
 
-(defn DISP-HI [{:keys [disp-lo r|m w mod]}]
+(defn DISP-HI [{:keys [disp-lo r|m mod]}]
   (when (or (= 2r10 mod)
             (= '[DIRECT-ADDRESS] r|m))
     [[:r|m 8 (fn [disp-hi {:keys [r|m]}]
@@ -238,7 +237,8 @@
    [[(OP 'mov) (literal 4 2r1011) (D-implicit 1) W REG] DATA DATA-if-SW]
    [[(OP 'mov) (literal 7 2r1010000) W (D-implicit 1) (AX-implicit)] ADDR-LO ADDR-HI]
    [[(OP 'mov) (literal 7 2r1010001) W (D-implicit 0) (AX-implicit)] ADDR-LO ADDR-HI]
-   [[(OP 'mov) (literal 8 2r10001100) (D-implicit 0)] [MOD (literal 1 2r0) SR R|M] DISP-LO DISP-HI]
+   [[(OP 'mov) (literal 8 2r10001110) (D-implicit 1) W-implicit] [MOD (literal 1 2r0) SR R|M] DISP-LO DISP-HI]
+   [[(OP 'mov) (literal 8 2r10001100) (D-implicit 0) W-implicit] [MOD (literal 1 2r0) SR R|M] DISP-LO DISP-HI]
    [[(OP 'push) (literal 8 2r11111111) W-implicit] [MOD (literal 3 2r110) R|M] DISP-LO DISP-HI]
    [[(OP 'push) (literal 5 2r01010) (D-implicit 1) W-implicit REG]]
    [[(OP 'push) (literal 3 2r000) (D-implicit 1) W-implicit SR (literal 3 2r110)]]
@@ -418,7 +418,7 @@
         )
       (dissoc instruction-decoded :literal))))
 
-(defn resume-instruction [{:keys [op d reg r|m data ip-inc8 rep ip-inc cs] :as decoded-instruction}
+(defn resume-instruction [{:keys [d reg r|m data ip-inc8 rep ip-inc cs] :as decoded-instruction}
                           ip]
   (let [[operand1 operand2] (cond
                               (and ip-inc cs) [(str cs ":" ip-inc) nil]
@@ -461,7 +461,7 @@
 
 (def jumps
   #{'je 'jl 'jle 'jb 'jbe 'jp 'jo 'js 'jne 'jnl 'jg 'jnb 'ja 'jnp 'jno 'jns 'loop 'loopz 'loopnz 'jcxz})
-(defn print-instruction [{:keys [op w operand1 operand2 include-size? prefix? segment]}]
+(defn print-instruction [{:keys [op w operand1 operand2 include-size? prefix? segment]} new-line?]
   (if (jumps op)
     (let [operand1 (+ 2 operand1)]
       (println op (str "$" (if (neg? operand1) operand1 (str "+" operand1)))))
@@ -480,9 +480,10 @@
           operand1      (include-+-seg-and-size operand1)
           operand2      (include-+-seg-and-size operand2)]
       (if (nil? prefix?)
-        (cond (and operand1 operand2) (println op (str operand1 ",") operand2)
-              operand1 (println op operand1)
-              :else (println op))
+        (let [print-fn (if new-line? println print)]
+          (cond (and operand1 operand2) (print-fn op (str operand1 ",") operand2)
+                operand1 (print-fn op operand1)
+                :else (print-fn op)))
         (print (str op " "))))))
 
 (defn -main [filename]
@@ -492,7 +493,7 @@
     (loop [ip 0]
       (when (< ip (count bytes-to-read))
         (let [{:keys [ip decoded]} (decode-instruction bytes-to-read ip)]
-          (print-instruction decoded)
+          (print-instruction decoded true)
           (recur ip))))
     )
   )

@@ -3,11 +3,11 @@ bits 16
 mov si, bx
 mov dh, al
 mov cl, 12
-mov ch, -12
+mov ch, 244
 mov cx, 12
-mov cx, -12
+mov cx, 65524
 mov dx, 3948
-mov dx, -3948
+mov dx, 61588
 mov al, [bx + si]
 mov bx, [bp + di]
 mov dx, [bp + 0]
@@ -230,7 +230,7 @@ and [bp + si + 10], ch
 and [bx + di + 1000], dx
 and bx, [bp + 0]
 and cx, [4384]
-and byte [bp + -39], -17
+and byte [bp + -39], 239
 and word [bx + si + -4332], 10328
 test bx, cx
 test [bp + 390], dh
@@ -248,7 +248,7 @@ or [bp + si + 10], ch
 or [bx + di + 1000], dx
 or bx, [bp + 0]
 or cx, [4384]
-or byte [bp + -39], -17
+or byte [bp + -39], 239
 or word [bx + si + -4332], 10328
 xor al, ah
 xor ch, cl
@@ -260,7 +260,7 @@ xor [bp + si + 10], ch
 xor [bx + di + 1000], dx
 xor bx, [bp + 0]
 xor cx, [4384]
-xor byte [bp + -39], -17
+xor byte [bp + -39], 239
 xor word [bx + si + -4332], 10328
 rep movsb
 rep cmpsb
@@ -280,7 +280,7 @@ jmp ax
 jmp di
 jmp [12]
 jmp [4395]
-ret -7
+ret 65529
 ret 500
 ret
 je $+0
@@ -326,7 +326,7 @@ and ss:[bp + si + 10], ch
 or ds:[bx + di + 1000], dx
 xor bx, es:[bp + 0]
 cmp cx, es:[4384]
-test byte cs:[bp + -39], -17
+test byte cs:[bp + -39], 239
 sbb word cs:[bx + si + -4332], 10328
 lock not byte cs:[bp + 9905]
 call 123:456
