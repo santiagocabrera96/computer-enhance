@@ -472,7 +472,8 @@
 (defn print-instruction [{:keys [op w operand1 operand2 include-size? prefix? segment]} new-line?]
   (if (jumps op)
     (let [operand1 (+ 2 operand1)]
-      (println op (str "$" (if (neg? operand1) operand1 (str "+" operand1)))))
+      (let [print-fn (if new-line? println print)]
+        (print-fn op (str "$" (if (neg? operand1) operand1 (str "+" operand1))))))
     (let [include-size? (if (nil? include-size?)
                           (and (not (symbol? operand1))
                                (not (symbol? operand2)))

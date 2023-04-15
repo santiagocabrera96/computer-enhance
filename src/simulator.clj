@@ -2,6 +2,7 @@
   (:require [decoder :refer [decode-instruction
                              load-memory-from-file
                              print-instruction
+                             def-locals
                              mask]]
             [clojure.data :refer [diff]]
             [clojure.string :as string]))
@@ -30,6 +31,7 @@
    'cs 0
    'ss 0
    'ds 0
+   'ip 0
    'flags {'C false
            'Z false
            'S false
@@ -130,7 +132,28 @@
                        [_ new-flags] (run-operation operator operand1 operand2)]
                    (set-flags state
                               flags
-                              new-flags))))))
+                              new-flags)))
+      'jne (if (not (get-in state ['flags 'Z]))
+             (set-register state 'ip (+ (get-register state 'ip)
+                                        operand1))
+             state)
+      'je (if (get-in state ['flags 'Z])
+            (set-register state 'ip (+ (get-register state 'ip)
+                                       operand1))
+            state)
+      'jp (if (get-in state ['flags 'P])
+            (set-register state 'ip (+ (get-register state 'ip)
+                                       operand1))
+            state)
+      'jb (if (get-in state ['flags 'S])
+            (set-register state 'ip (+ (get-register state 'ip)
+                                       operand1))
+            state)
+      'loopnz (let [state (set-register state 'cx (dec (get-in state ['cx])))]
+                (if (not (zero? (get-register state 'cx)))
+                  (set-register state 'ip (+ (get-register state 'ip)
+                                             operand1))
+                  state)))))
 
 (defn print-hex-word [b]
   (str "0x" (Integer/toHexString b)))
@@ -144,31 +167,62 @@
 (defn flags->str [flags-map]
   (apply str (filter flags-map ['C 'P 'A 'Z 'S 'O])))
 
-(defn print-state [state]
+(defn print-state [state print-ip?]
   (println "Final registers:")
-  (doseq [k ['ax 'bx 'cx 'dx 'sp 'bp 'si 'di 'es 'cs 'ss 'ds]]
-    (when-not (zero? (state k))
-      (println (str "      " k ": " (print-full-hex-word (state k)) " " "(" (state k) ")"))))
+  (doseq [k ['ax 'bx 'cx 'dx 'sp 'bp 'si 'di 'es 'cs 'ss 'ds 'ip]]
+    (when (or (not= k 'ip)
+              print-ip?)
+      (when-not (zero? (state k))
+        (println (str "      " k ": " (print-full-hex-word (state k)) " " "(" (state k) ")")))))
   (let [flags-str (flags->str (get state 'flags))]
     (when (not-empty flags-str)
       (println "   flags:" flags-str))))
 
-(defn -main [filename]
-  (let [bytes-to-read (load-memory-from-file filename)]
+(defn -main [filename print-ip?]
+  (let [print-ip? (= "print-ip" (str print-ip?))
+        bytes-to-read (load-memory-from-file filename)]
     (println (str "--- " filename " execution ---"))
-    (loop [ip    0
-           state initial-state]
-      (if (< ip (count bytes-to-read))
-        (let [{:keys [ip decoded]} (decode-instruction bytes-to-read ip)]
+    (loop [state initial-state]
+      (if (< (state 'ip) (count bytes-to-read))
+        (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
           (print-instruction decoded false)
-          (let [new-state (simulate-instruction state decoded)
+          (let [new-state (assoc state 'ip ip)
+                new-state (simulate-instruction new-state decoded)
                 [delta1] (diff new-state state)]
             (print " ; ")
             (doseq [k (keys delta1)]
-              (if (= 'flags k)
-                (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
-                (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
+              (when (or (not= k 'ip)
+                        print-ip?)
+                (if (= 'flags k)
+                  (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
+                  (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " ")))))
             (println)
-            (recur ip new-state)))
+            (recur new-state)))
         (do (println)
-            (print-state state))))))
+            (print-state state print-ip?))))))
+
+
+(comment
+ (def filename "listing_0050_challenge_jumps")
+ (-main filename "print-ip")
+ (def bytes-to-read (load-memory-from-file filename))
+ (def state initial-state)
+
+ (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
+   (print-instruction decoded false)
+   (let [new-state (assoc state 'ip ip)
+         new-state (simulate-instruction new-state decoded)
+         [delta1] (diff new-state state)]
+     (print " ; ")
+     (doseq [k (keys delta1)]
+       (if (= 'flags k)
+         (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
+         (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
+     (println)
+     (def state new-state)
+     )
+   ;(print-state state)
+   )
+ )
+
+
