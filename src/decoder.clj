@@ -42,6 +42,11 @@
 (defn valid-number? [val bits]
   (and (not (nil? val)) (<= 0 bits (mask 8))))
 
+(def FLAGS
+  {'add ['C 'Z 'S 'O 'P 'A]
+   'sub ['C 'Z 'S 'O 'P 'A]
+   'cmp ['C 'Z 'S 'O 'P 'A]})
+
 (def MOD
   [:mod 2 (fn [mod & _]
             (assert (valid-number? mod 2))
@@ -133,9 +138,11 @@
               data)]])
 
 (def DATA
-  [[:data 8 (fn [data & _]
+  [[:data 8 (fn [data {:keys [s] :or {s 0}}]
               (assert (valid-number? data 8))
-              data)]])
+              (if (zero? s)
+                data
+                (signed-8-bit data)))]])
 
 (defn DATA-if-SW [{:keys [data s w] :or {s 0}}]
   (when (and (= s 0) (= 1 w))
@@ -418,7 +425,7 @@
         )
       (dissoc instruction-decoded :literal))))
 
-(defn resume-instruction [{:keys [d reg r|m data ip-inc8 rep ip-inc cs] :as decoded-instruction}
+(defn resume-instruction [{:keys [op d reg r|m data ip-inc8 rep ip-inc cs] :as decoded-instruction}
                           ip]
   (let [[operand1 operand2] (cond
                               (and ip-inc cs) [(str cs ":" ip-inc) nil]
@@ -433,7 +440,8 @@
                               :else [data r|m])]
     (assoc decoded-instruction
       :operand1 operand1
-      :operand2 operand2)))
+      :operand2 operand2
+      :flags (FLAGS op))))
 
 (defn decode-instruction [bytes-to-read ip]
   (loop [instruction-part (find-instruction bytes-to-read ip)
