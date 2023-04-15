@@ -2,7 +2,6 @@
   (:require [decoder :refer [decode-instruction
                              load-memory-from-file
                              print-instruction
-                             def-locals
                              mask]]
             [clojure.data :refer [diff]]
             [clojure.string :as string]))
@@ -200,29 +199,3 @@
             (recur new-state)))
         (do (println)
             (print-state state print-ip?))))))
-
-
-(comment
- (def filename "listing_0050_challenge_jumps")
- (-main filename "print-ip")
- (def bytes-to-read (load-memory-from-file filename))
- (def state initial-state)
-
- (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
-   (print-instruction decoded false)
-   (let [new-state (assoc state 'ip ip)
-         new-state (simulate-instruction new-state decoded)
-         [delta1] (diff new-state state)]
-     (print " ; ")
-     (doseq [k (keys delta1)]
-       (if (= 'flags k)
-         (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
-         (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
-     (println)
-     (def state new-state)
-     )
-   ;(print-state state)
-   )
- )
-
-
