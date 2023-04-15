@@ -18,7 +18,8 @@
    "listing_0047_challenge_flags"
    "listing_0048_ip_register"
    "listing_0049_conditional_jumps"
-   "listing_0050_challenge_jumps"])
+   "listing_0050_challenge_jumps"
+   "listing_0051_memory_mov"])
 
 (deftest decoder-test
   (doseq [filename test-files]

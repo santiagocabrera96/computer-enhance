@@ -2,7 +2,9 @@
   (:require [decoder :refer [decode-instruction
                              load-memory-from-file
                              print-instruction
-                             mask]]
+                             def-locals
+                             mask
+                             signed-8-bit]]
             [clojure.data :refer [diff]]
             [clojure.string :as string]))
 
@@ -17,26 +19,27 @@
    'ch 'cx
    'dh 'dx})
 
-(def initial-state
-  {'ax 0
-   'bx 0
-   'cx 0
-   'dx 0
-   'sp 0
-   'bp 0
-   'si 0
-   'di 0
-   'es 0
-   'cs 0
-   'ss 0
-   'ds 0
-   'ip 0
-   'flags {'C false
-           'Z false
-           'S false
-           'O false
-           'P false
-           'A false}})
+(defn initial-state [bytes-to-read]
+  {'ax     0
+   'bx     0
+   'cx     0
+   'dx     0
+   'sp     0
+   'bp     0
+   'si     0
+   'di     0
+   'es     0
+   'cs     0
+   'ss     0
+   'ds     0
+   'ip     0
+   'flags  {'C false
+            'Z false
+            'S false
+            'O false
+            'P false
+            'A false}
+   'memory (byte-array (bit-shift-left 1 16) bytes-to-read)})
 
 (defn get-register [state register]
   (cond (contains? state register) (get state register)
@@ -99,13 +102,34 @@
                new-state))
       state)))
 
-(defn simulate-instruction [state {:keys [op operand1 operand2 flags]}]
-  (let [operand2 (cond (symbol? operand2) (get-register state operand2)
-                       (int? operand2) operand2)]
+(defn set-memory [state address value w]
+  (aset (state 'memory) address (byte (signed-8-bit (bit-and value 0xff))))
+  (if (zero? w)
+    state
+    (do (aset (state 'memory) (inc address) (byte (signed-8-bit (bit-shift-right (bit-and value 0xff00) 8))))
+        state)))
+
+(defn simulate-instruction [state {:keys [op w operand1 operand2 flags]}]
+  (let [operand1 (if (vector? operand1)
+                   (let [address (reduce + (map #(if (symbol? %)
+                                                   (get-register state %)
+                                                   %) operand1))]
+                     [address])
+                   operand1)
+        operand2 (cond (symbol? operand2) (get-register state operand2)
+                       (int? operand2) operand2
+                       (vector? operand2) (let [address (reduce + (map #(if (symbol? %)
+                                                                                   (get-register state %)
+                                                                                   %) operand2))]
+                                            (if (zero? w)
+                                              (get-in state ['memory address])
+                                              (bit-or (get-in state ['memory address])
+                                                      (bit-shift-left (get-in state ['memory (+ address 1)]) 8)))))]
     (condp = op
-      'mov (when (and (symbol? operand1)
-                      (int? operand2))
-             (set-register state operand1 operand2))
+      'mov (cond (and (symbol? operand1)
+                      (int? operand2)) (set-register state operand1 operand2)
+                 (and (vector? operand1)
+                      (int? operand2)) (set-memory state (first operand1) operand2 w))
       'add (cond (and (symbol? operand1)
                       (int? operand2))
                  (let [operator         +
@@ -152,7 +176,12 @@
                 (if (not (zero? (get-register state 'cx)))
                   (set-register state 'ip (+ (get-register state 'ip)
                                              operand1))
-                  state)))))
+                  state))
+      'loop (let [state (set-register state 'cx (dec (get-in state ['cx])))]
+              (if (not (zero? (get-register state 'cx)))
+                (set-register state 'ip (+ (get-register state 'ip)
+                                           operand1))
+                state)))))
 
 (defn print-hex-word [b]
   (str "0x" (Integer/toHexString b)))
@@ -166,9 +195,12 @@
 (defn flags->str [flags-map]
   (apply str (filter flags-map ['C 'P 'A 'Z 'S 'O])))
 
+(def register-keys ['ax 'bx 'cx 'dx 'sp 'bp 'si 'di 'es 'cs 'ss 'ds 'ip 'flags])
+
 (defn print-state [state print-ip?]
   (println "Final registers:")
-  (doseq [k ['ax 'bx 'cx 'dx 'sp 'bp 'si 'di 'es 'cs 'ss 'ds 'ip]]
+  (doseq [k register-keys
+          :when (not= k 'flags)]
     (when (or (not= k 'ip)
               print-ip?)
       (when-not (zero? (state k))
@@ -177,25 +209,67 @@
     (when (not-empty flags-str)
       (println "   flags:" flags-str))))
 
-(defn -main [filename print-ip?]
-  (let [print-ip? (= "print-ip" (str print-ip?))
-        bytes-to-read (load-memory-from-file filename)]
-    (println (str "--- " filename " execution ---"))
-    (loop [state initial-state]
-      (if (< (state 'ip) (count bytes-to-read))
-        (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
-          (print-instruction decoded false)
-          (let [new-state (assoc state 'ip ip)
-                new-state (simulate-instruction new-state decoded)
-                [delta1] (diff new-state state)]
-            (print " ; ")
-            (doseq [k (keys delta1)]
-              (when (or (not= k 'ip)
-                        print-ip?)
-                (if (= 'flags k)
-                  (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
-                  (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " ")))))
-            (println)
-            (recur new-state)))
-        (do (println)
-            (print-state state print-ip?))))))
+(defn -main
+  ([filename] (-main filename "" ""))
+  ([filename print-ip] (-main filename print-ip ""))
+  ([filename print-ip? dump?]
+   (let [print-ip?     (= "print-ip" (str print-ip?))
+         bytes-to-read (load-memory-from-file filename)
+         dump?         (= dump? "dump")]
+     (println (str "--- " filename " execution ---"))
+     (loop [state (initial-state bytes-to-read)]
+       (if (< (state 'ip) (count bytes-to-read))
+         (let [{:keys [ip decoded]} (decode-instruction (vec (state 'memory)) (state 'ip))]
+           (print-instruction decoded false)
+           (let [new-state (assoc state 'ip ip)
+                 new-state (simulate-instruction new-state decoded)
+                 [delta1] (diff new-state state)]
+             (print " ; ")
+             (doseq [k register-keys
+                     :when (and (contains? delta1 k)
+                                (or (not= k 'ip)
+                                    print-ip?))]
+               (cond (= 'flags k) (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
+                     (not= 'memory k) (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
+             (println)
+             (recur new-state)))
+         (do (println)
+             (print-state state print-ip?)
+             (when dump?
+               (clojure.java.io/copy (state 'memory) (java.io.File. "result.data")))))))))
+
+(comment
+ (def filename
+   ;"listing_0043_immediate_movs"
+   ;"listing_0046_add_sub_cmp"
+   ;"listing_0052_memory_add_loop"
+   ;"listing_0053_add_loop_challenge"
+   ;"listing_0054_draw_rectangle"
+   "listing_0055_challenge_rectangle"
+   )
+ (-main filename "print-ip" "")
+ (-main filename "print-ip" "dump")
+ (def bytes-to-read (load-memory-from-file filename))
+
+ (def state (initial-state bytes-to-read))
+
+ (let [{:keys [ip decoded]} (decode-instruction (vec (state 'memory)) (state 'ip))]
+   (print-instruction decoded false)
+   (let [new-state (assoc state 'ip ip)
+         new-state (simulate-instruction new-state decoded)
+         [delta1] (diff new-state state)]
+     (print " ; ")
+     (doseq [k register-keys
+             :when (contains? delta1 k)]
+       (cond (= 'flags k) (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
+             (not= 'memory k) (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
+     (println)
+     (def state new-state)
+     )
+   ;(subvec (vec (state 'memory)) 0 50)
+   (subvec (vec (state 'memory)) 1000 1010)
+
+   )
+ )
+
+
