@@ -220,7 +220,7 @@
      (println (str "--- " filename " execution ---"))
      (loop [state (initial-state bytes-to-read)]
        (if (< (state 'ip) (count bytes-to-read))
-         (let [{:keys [ip decoded]} (decode-instruction (vec (state 'memory)) (state 'ip))]
+         (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
            (print-instruction decoded false)
            (let [new-state (assoc state 'ip ip)
                  new-state (simulate-instruction new-state decoded)]
