@@ -3,20 +3,13 @@
             [clojure.string :as string])
   (:import [java.io ByteArrayOutputStream]))
 
-(defmacro def-locals []
-  (let [bindings (filter #(and (simple-symbol? %)
-                               (not (string/includes? (str %) "--"))
-                               (not (re-matches #"(output|input)-(schema|checker)\d\d\d+.*" (str %)))) (keys &env))]
-    `(do ~@(for [sym bindings]
-             `(def ~sym ~sym)))))
-
 (defn mask [n]
   (dec (bit-shift-left 1 n)))
 
 (defn load-memory-from-file [filename]
-  (with-open [in  (clojure.java.io/input-stream (io/resource filename))
+  (with-open [in  (io/input-stream filename)
               out (ByteArrayOutputStream.)]
-    (clojure.java.io/copy in out)
+    (io/copy in out)
     (mapv #(bit-and % (mask 8)) (.toByteArray out))))
 
 (defn byte->string
@@ -24,7 +17,6 @@
   ([b n]
    (let [s (Integer/toBinaryString (bit-and b (mask n)))]
      (str (apply str (repeat (- n (count s)) "0")) s))))
-
 
 (defn add-bytes [lo hi]
   (+ lo (bit-shift-left hi 8)))
@@ -192,7 +184,7 @@
 (def ADDR-HI
   [[:r|m 8 (fn [addr-hi & {:keys [addr-lo]}]
              (assert (valid-number? addr-hi 8))
-              [(add-bytes addr-lo addr-hi)])]])
+             [(add-bytes addr-lo addr-hi)])]])
 
 (def IP-INC8
   [[:ip-inc8 8 (fn [ip-inc8 & _]
@@ -211,15 +203,15 @@
 
 (def IP-LO
   [[:ip-inc 8 (fn [ip-lo & _]
-               ip-lo)]])
+                ip-lo)]])
 
 (def IP-HI
   [[:ip-inc 8 (fn [ip-hi {:keys [ip-inc]}]
-            (signed-16-bit (add-bytes ip-inc ip-hi)))]])
+                (signed-16-bit (add-bytes ip-inc ip-hi)))]])
 
 (def CS-LO
   [[:cs 8 (fn [cs-lo & _]
-               cs-lo)]])
+            cs-lo)]])
 
 (def CS-HI
   [[:cs 8 (fn [cs-hi {:keys [cs]}]
@@ -376,7 +368,7 @@
   )
 
 (defn byte-instruction-match? [byte-instruction byte]
-  (loop [bits-read 0
+  (loop [bits-read    0
          part-to-read byte-instruction]
     (if (empty? part-to-read)
       true
@@ -397,7 +389,7 @@
     (byte-instruction-match? first-byte-instruction first-byte)))
 
 (defn find-instruction [bytes-to-read ip]
-  (let [first-byte (bytes-to-read ip)
+  (let [first-byte  (bytes-to-read ip)
         second-byte (bytes-to-read (inc ip))]
     (loop [instructions INSTRUCTIONS]
       (if (not-empty instructions)
@@ -407,8 +399,8 @@
         (throw (ex-info "Instruction not found" {}))))))
 
 (defn decode-byte [instruction byte-to-decode instruction-decoded]
-  (loop [bits-decoded 0
-         instruction instruction
+  (loop [bits-decoded        0
+         instruction         instruction
          instruction-decoded instruction-decoded]
     (if (not-empty instruction)
       (let [[keyword-to-include
@@ -471,23 +463,23 @@
   #{'je 'jl 'jle 'jb 'jbe 'jp 'jo 'js 'jne 'jnl 'jg 'jnb 'ja 'jnp 'jno 'jns 'loop 'loopz 'loopnz 'jcxz})
 (defn print-instruction [{:keys [op w operand1 operand2 include-size? prefix? segment]} new-line?]
   (if (jumps op)
-    (let [operand1 (+ 2 operand1)]
-      (let [print-fn (if new-line? println print)]
-        (print-fn op (str "$" (if (neg? operand1) operand1 (str "+" operand1))))))
-    (let [include-size? (if (nil? include-size?)
-                          (and (not (symbol? operand1))
-                               (not (symbol? operand2)))
-                          include-size?)
+    (let [operand1 (+ 2 operand1)
+          print-fn (if new-line? println print)]
+      (print-fn op (str "$" (if (neg? operand1) operand1 (str "+" operand1)))))
+    (let [include-size?          (if (nil? include-size?)
+                                   (and (not (symbol? operand1))
+                                        (not (symbol? operand2)))
+                                   include-size?)
           include-+-seg-and-size (fn [operand]
                                    (if (vector? operand)
-                                     (let [operand (clojure.string/replace (str operand) " " " + ")
+                                     (let [operand (string/replace (str operand) " " " + ")
                                            operand (if segment
-                                                      (str segment ":" operand)
-                                                      operand)]
+                                                     (str segment ":" operand)
+                                                     operand)]
                                        (str (when include-size? (if (zero? w) "byte " "word ")) operand))
                                      operand))
-          operand1      (include-+-seg-and-size operand1)
-          operand2      (include-+-seg-and-size operand2)]
+          operand1               (include-+-seg-and-size operand1)
+          operand2               (include-+-seg-and-size operand2)]
       (if (nil? prefix?)
         (let [print-fn (if new-line? println print)]
           (cond (and operand1 operand2) (print-fn op (str operand1 ",") operand2)
@@ -496,7 +488,8 @@
         (print (str op " "))))))
 
 (defn -main [filename]
-  (let [bytes-to-read (load-memory-from-file filename)]
+  (let [bytes-to-read (load-memory-from-file filename)
+        filename      (last (string/split filename #"/"))]
     (println ";" filename "disassembly:")
     (println "bits 16")
     (loop [ip 0]

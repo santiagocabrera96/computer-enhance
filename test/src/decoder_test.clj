@@ -29,7 +29,7 @@
   (doseq [filename test-files]
     (println "Decoding" filename)
     (time
-     (->> (sh "clj" "-m" "decoder" filename)
+     (->> (sh "clj" "-m" "decoder" (str "resources/" filename))
           :out
           (spit (str "test/resources/" filename ".asm"))))
     (sh "nasm" (str "test/resources/" filename ".asm"))

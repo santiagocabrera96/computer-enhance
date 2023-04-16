@@ -1,12 +1,12 @@
 (ns simulator
-  (:require [decoder :refer [decode-instruction
+  (:require [clojure.string :as string]
+            [clojure.java.io :as io]
+            [decoder :refer [decode-instruction
                              load-memory-from-file
                              print-instruction
-                             def-locals
                              mask
-                             signed-8-bit]]
-            [clojure.data :refer [diff]]
-            [clojure.string :as string]))
+                             signed-8-bit]])
+  (:import [java.io File]))
 
 (def lo-registers
   {'al 'ax
@@ -66,23 +66,23 @@
               4)))
 
 (defn run-operation [operator operand1 operand2]
-  (let [operand1 (bit-and operand1 (mask 16))
-        operand2 (bit-and operand2 (mask 16))
-        result (operator operand1 operand2)
+  (let [operand1      (bit-and operand1 (mask 16))
+        operand2      (bit-and operand2 (mask 16))
+        result        (operator operand1 operand2)
         result-16-bit (bit-and result (mask 16))
         ;_ (do (println operator operand1 operand2))
-        flags  {'C (bit-test result 16)
-                'Z (zero? result-16-bit)
-                'S (bit-test result-16-bit 15)
-                'O (condp = operator
-                     + (bit-test (bit-and (bit-not (bit-xor operand1 operand2))
-                                          (bit-xor operand2 result))
-                                 15)
-                     - (bit-test (bit-and (bit-xor operand1 operand2)
-                                          (bit-not (bit-xor operand2 result)))
-                                 15))
-                'P (zero? (mod (number-of-ones (bit-and result (mask 8))) 2))
-                'A (has-auxiliary-carry? operator operand1 operand2)}]
+        flags         {'C (bit-test result 16)
+                       'Z (zero? result-16-bit)
+                       'S (bit-test result-16-bit 15)
+                       'O (condp = operator
+                            + (bit-test (bit-and (bit-not (bit-xor operand1 operand2))
+                                                 (bit-xor operand2 result))
+                                        15)
+                            - (bit-test (bit-and (bit-xor operand1 operand2)
+                                                 (bit-not (bit-xor operand2 result)))
+                                        15))
+                       'P (zero? (mod (number-of-ones (bit-and result (mask 8))) 2))
+                       'A (has-auxiliary-carry? operator operand1 operand2)}]
     [result-16-bit flags]))
 
 (defn set-flags [state flags new-flags]
@@ -119,8 +119,8 @@
         operand2 (cond (symbol? operand2) (get-register state operand2)
                        (int? operand2) operand2
                        (vector? operand2) (let [address (reduce + (map #(if (symbol? %)
-                                                                                   (get-register state %)
-                                                                                   %) operand2))]
+                                                                          (get-register state %)
+                                                                          %) operand2))]
                                             (if (zero? w)
                                               (get-in state ['memory address])
                                               (bit-or (get-in state ['memory address])
@@ -132,26 +132,26 @@
                       (int? operand2)) (set-memory state (first operand1) operand2 w))
       'add (cond (and (symbol? operand1)
                       (int? operand2))
-                 (let [operator         +
-                       destination      operand1
-                       operand1         (get-register state operand1)
+                 (let [operator    +
+                       destination operand1
+                       operand1    (get-register state operand1)
                        [result new-flags] (run-operation operator operand1 operand2)]
                    (set-flags (set-register state destination result)
                               flags
                               new-flags)))
       'sub (cond (and (symbol? operand1)
                       (int? operand2))
-                 (let [operator         -
-                       destination      operand1
-                       operand1         (get-register state operand1)
+                 (let [operator    -
+                       destination operand1
+                       operand1    (get-register state operand1)
                        [result new-flags] (run-operation operator operand1 operand2)]
                    (set-flags (set-register state destination result)
                               flags
                               new-flags)))
       'cmp (cond (and (symbol? operand1)
                       (int? operand2))
-                 (let [operator    -
-                       operand1    (get-register state operand1)
+                 (let [operator -
+                       operand1 (get-register state operand1)
                        [_ new-flags] (run-operation operator operand1 operand2)]
                    (set-flags state
                               flags
@@ -215,70 +215,27 @@
   ([filename print-ip? dump?]
    (let [print-ip?     (= "print-ip" (str print-ip?))
          bytes-to-read (load-memory-from-file filename)
-         dump?         (= dump? "dump")]
+         dump?         (= dump? "dump")
+         filename      (last (string/split filename #"/"))]
      (println (str "--- " filename " execution ---"))
      (loop [state (initial-state bytes-to-read)]
        (if (< (state 'ip) (count bytes-to-read))
          (let [{:keys [ip decoded]} (decode-instruction (vec (state 'memory)) (state 'ip))]
            (print-instruction decoded false)
            (let [new-state (assoc state 'ip ip)
-                 new-state (simulate-instruction new-state decoded)
-                 [delta1] (diff new-state state)]
+                 new-state (simulate-instruction new-state decoded)]
              (print " ; ")
              (doseq [k register-keys
-                     :when (and (contains? delta1 k)
+                     :when (and (not= 'memory k)
+                                (not= (k state) (k new-state))
                                 (or (not= k 'ip)
                                     print-ip?))]
-               (cond (= 'flags k) (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
-                     (not= 'memory k) (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
+               (if (= 'flags k)
+                 (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
+                 (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
              (println)
              (recur new-state)))
          (do (println)
              (print-state state print-ip?)
              (when dump?
-               (clojure.java.io/copy (state 'memory) (java.io.File. "result.data")))))))))
-
-(comment
- (def filename
-   ;"listing_0043_immediate_movs"
-   ;"listing_0046_add_sub_cmp"
-   ;"listing_0052_memory_add_loop"
-   ;"listing_0053_add_loop_challenge"
-   ;"listing_0054_draw_rectangle"
-   "listing_0055_challenge_rectangle"
-   )
- (require '[clj-async-profiler.core :as prof])
-
- (time (-main filename "print-ip" ""))
-
- (prof/profile (-main filename "pr+int-ip" ""))
- (prof/serve-ui 8080)
-
- (-main filename "print-ip" "")
-
- (time (nil? (with-out-str
-               (-main filename "print-ip" "dump"))))
- (def bytes-to-read (load-memory-from-file filename))
-
- (def state (initial-state bytes-to-read))
-
- (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
-   (print-instruction decoded false)
-   (let [new-state (assoc state 'ip ip)
-         new-state (simulate-instruction new-state decoded)
-         [delta1] (diff new-state state)]
-     (print " ; ")
-     (doseq [k register-keys
-             :when (contains? delta1 k)]
-       (cond (= 'flags k) (print (str "flags:" (flags->str (state 'flags)) "->" (flags->str (new-state 'flags)) " "))
-             (not= 'memory k) (print (str k ":" (print-hex-word (state k)) "->" (print-hex-word (new-state k)) " "))))
-     (println)
-     (def state new-state)
-     )
-   ;(subvec (vec (state 'memory)) 0 50)
-   (subvec (vec (state 'memory)) 1000 1010)
-
-   )
- )
-
-
+               (io/copy (state 'memory) (File. "result.data")))))))))
