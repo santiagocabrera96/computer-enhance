@@ -1,7 +1,8 @@
 (ns simulator-test
   (:require [clojure.test :refer [is deftest]]
             [clojure.java.shell :refer [sh]]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [simulator]))
 
 (def test-files
   [["listing_0043_immediate_movs"]
@@ -21,8 +22,7 @@
 (deftest simulator-test
   (doseq [[filename print-ip? dump?] test-files]
     (println "Simulating" filename)
-    (time (->> (sh "clj" "-m" "simulator" (str "resources/" filename) (str print-ip?) (str dump?))
-               :out
+    (time (->> (with-out-str (simulator/-main (str "resources/" filename) (str print-ip?) (str dump?)))
                (spit (str "test/resources/" filename ".txt"))))
     (let [expected (map #(-> % (string/split #";") last (string/trim)) (rest (filter not-empty (string/split-lines (slurp (str "resources/" filename ".txt"))))))
           actual   (map #(-> % (string/split #";") last (string/trim)) (rest (filter not-empty (string/split-lines (slurp (str "test/resources/" filename ".txt"))))))]

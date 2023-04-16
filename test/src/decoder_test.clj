@@ -1,7 +1,8 @@
 (ns decoder-test
   (:require [clojure.test :refer [deftest is]]
             [clojure.java.shell :refer [sh]]
-            [clojure.string :as string]))
+            [clojure.string :as string]
+            [decoder]))
 
 
 (def test-files
@@ -29,8 +30,7 @@
   (doseq [filename test-files]
     (println "Decoding" filename)
     (time
-     (->> (sh "clj" "-m" "decoder" (str "resources/" filename))
-          :out
+     (->> (with-out-str (decoder/-main (str "resources/" filename)))
           (spit (str "test/resources/" filename ".asm"))))
     (sh "nasm" (str "test/resources/" filename ".asm"))
     (let [expected (slurp (str "resources/" filename))
