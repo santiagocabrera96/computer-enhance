@@ -247,13 +247,22 @@
    ;"listing_0054_draw_rectangle"
    "listing_0055_challenge_rectangle"
    )
+ (require '[clj-async-profiler.core :as prof])
+
+ (time (-main filename "print-ip" ""))
+
+ (prof/profile (-main filename "pr+int-ip" ""))
+ (prof/serve-ui 8080)
+
  (-main filename "print-ip" "")
- (-main filename "print-ip" "dump")
+
+ (time (nil? (with-out-str
+               (-main filename "print-ip" "dump"))))
  (def bytes-to-read (load-memory-from-file filename))
 
  (def state (initial-state bytes-to-read))
 
- (let [{:keys [ip decoded]} (decode-instruction (vec (state 'memory)) (state 'ip))]
+ (let [{:keys [ip decoded]} (decode-instruction bytes-to-read (state 'ip))]
    (print-instruction decoded false)
    (let [new-state (assoc state 'ip ip)
          new-state (simulate-instruction new-state decoded)

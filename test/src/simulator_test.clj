@@ -20,9 +20,10 @@
 
 (deftest simulator-test
   (doseq [[filename print-ip? dump?] test-files]
-    (->> (sh "clj" "-m" "simulator" filename (str print-ip?) (str dump?))
-         :out
-         (spit (str "test/resources/" filename ".txt")))
+    (println "Simulating" filename)
+    (time (->> (sh "clj" "-m" "simulator" filename (str print-ip?) (str dump?))
+               :out
+               (spit (str "test/resources/" filename ".txt"))))
     (let [expected (map #(-> % (string/split #";") last (string/trim)) (rest (filter not-empty (string/split-lines (slurp (str "resources/" filename ".txt"))))))
           actual   (map #(-> % (string/split #";") last (string/trim)) (rest (filter not-empty (string/split-lines (slurp (str "test/resources/" filename ".txt"))))))]
       (is (= expected actual)

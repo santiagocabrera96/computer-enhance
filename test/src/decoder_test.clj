@@ -19,13 +19,19 @@
    "listing_0048_ip_register"
    "listing_0049_conditional_jumps"
    "listing_0050_challenge_jumps"
-   "listing_0051_memory_mov"])
+   "listing_0051_memory_mov"
+   "listing_0052_memory_add_loop"
+   "listing_0053_add_loop_challenge"
+   "listing_0054_draw_rectangle"
+   "listing_0055_challenge_rectangle"])
 
 (deftest decoder-test
   (doseq [filename test-files]
-    (->> (sh "clj" "-m" "decoder" filename)
-     :out
-     (spit (str "test/resources/" filename ".asm")))
+    (println "Decoding" filename)
+    (time
+     (->> (sh "clj" "-m" "decoder" filename)
+          :out
+          (spit (str "test/resources/" filename ".asm"))))
     (sh "nasm" (str "test/resources/" filename ".asm"))
     (let [expected (slurp (str "resources/" filename))
           actual   (slurp (str "test/resources/" filename))]
